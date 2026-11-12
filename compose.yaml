@@ -1,0 +1,83 @@
+name: flashroute
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: flashroute
+      POSTGRES_USER: flashroute
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup.sh first}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U flashroute -d flashroute']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.4.4
+    entrypoint: [anvil]
+    command: [--host, 0.0.0.0, --chain-id, '31337', --state, /state/anvil.json, --state-interval, '1']
+    volumes: [anvil-data:/state]
+    healthcheck:
+      test: [CMD, cast, block-number, --rpc-url, 'http://localhost:8545']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  deploy:
+    image: ghcr.io/foundry-rs/foundry:v1.4.4
+    working_dir: /contracts
+    entrypoint: [sh, /scripts/deploy-local.sh]
+    environment: {RPC_URL: 'http://anvil:8545'}
+    volumes:
+      - ./contracts:/contracts
+      - ./scripts:/scripts:ro
+      - deployment:/contracts/deployments
+    depends_on:
+      anvil: {condition: service_healthy}
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://flashroute:${POSTGRES_PASSWORD}@db:5432/flashroute
+      RPC_URL: http://anvil:8545
+      OPERATOR_API_KEY: ${OPERATOR_API_KEY:?Run scripts/setup.sh first}
+      ALLOW_LOCAL_EXECUTION: 'true'
+      DEPLOYMENT_FILE: /deployment/local.json
+      RUST_LOG: info,tower_http=info
+    volumes: [deployment:/deployment:ro]
+    depends_on:
+      db: {condition: service_healthy}
+      deploy: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8080/livez']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  web:
+    build: ./frontend
+    ports: ['127.0.0.1:3000:8080']
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, --spider, 'http://localhost:8080/']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    profiles: [observability]
+    volumes: ['./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro', 'prometheus-data:/prometheus']
+    ports: ['127.0.0.1:9090:9090']
+    depends_on: [api]
+    restart: unless-stopped
+volumes:
+  postgres-data:
+  anvil-data:
+  deployment:
+  prometheus-data:

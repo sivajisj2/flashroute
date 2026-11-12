@@ -1,0 +1,12 @@
+services:
+  caddy:
+    image: caddy:2.9-alpine
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    volumes: ['./infra/Caddyfile:/etc/caddy/Caddyfile:ro', 'caddy-data:/data', 'caddy-config:/config']
+    depends_on: [web]
+    restart: unless-stopped
+volumes:
+  caddy-data:
+  caddy-config:
