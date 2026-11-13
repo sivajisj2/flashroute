@@ -26,6 +26,9 @@ services:
     restart: unless-stopped
   deploy:
     image: ghcr.io/foundry-rs/foundry:v1.4.4
+    # This one-shot container writes the shared deployment artifact volume.
+    # Runtime API/web containers remain non-root below.
+    user: "0:0"
     working_dir: /contracts
     entrypoint: [sh, /scripts/deploy-local.sh]
     environment:
