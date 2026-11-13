@@ -28,7 +28,12 @@ services:
     image: ghcr.io/foundry-rs/foundry:v1.4.4
     working_dir: /contracts
     entrypoint: [sh, /scripts/deploy-local.sh]
-    environment: {RPC_URL: 'http://anvil:8545'}
+    environment:
+      RPC_URL: 'http://anvil:8545'
+      # The source tree is bind-mounted and is not writable by Foundry's
+      # non-root container user. Keep compiler output/cache in /tmp instead.
+      FOUNDRY_OUT: /tmp/flashroute-out
+      FOUNDRY_CACHE_PATH: /tmp/flashroute-cache
     volumes:
       - ./contracts:/contracts
       - ./scripts:/scripts:ro
